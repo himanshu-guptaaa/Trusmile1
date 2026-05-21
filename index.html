@@ -1057,7 +1057,7 @@ let skillsAnimated=false;
 
 // Supabase remote blog sync (optional)
 const SUPABASE_URL = 'https://hnpiqeswxofcxuwbvegu.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_4mkF2Wnb5_aPlDMzsEuf4A_tECtrd8U';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhucGlxZXN3eG9mY3h1d2J2ZWd1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNjIxNTksImV4cCI6MjA5NDgzODE1OX0.cEiqawlYJQx6mH0vJPEvXR3UQg9hYhfksMd4biVMIYU';
 let supabaseClient = null;
 let usingSupabase = false;
 
@@ -1112,23 +1112,25 @@ async function loadBlogs(){
 async function saveBlogRemote(blog){
   if(!usingSupabase) return;
   try{
-    const payload = {...blog, id:Number(blog.id)};
-    const {error} = await supabaseClient.from('blogs').upsert(payload,{onConflict:'id'});
-    if(error) console.warn('Supabase blog save failed', error);
+    const payload = {...blog};
+    // delete undefined fields
+    Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+    
+    const {error} = await supabaseClient
+      .from('blogs')
+      .upsert(payload);
+      
+    if(error){
+      console.warn('Supabase blog save failed', error);
+      showNotification('Remote blog save failed: ' + error.message, '#ef5350');
+    }
   }catch(err){
     console.warn('Supabase saveBlog error', err);
+    showNotification('Remote blog save error. Check console.', '#ef5350');
   }
 }
 
-async function deleteBlogRemote(id){
-  if(!usingSupabase) return;
-  try{
-    const {error} = await supabaseClient.from('blogs').delete().eq('id',id);
-    if(error) console.warn('Supabase blog delete failed', error);
-  }catch(err){
-    console.warn('Supabase deleteBlog error', err);
-  }
-}
+
 
 // ── IMG RESOLVER ──────────────────────────────────────
 function getImgSrc(item){
@@ -1482,6 +1484,14 @@ document.addEventListener('keydown',e=>{
 // ── BLOG SYSTEM ───────────────────────────────────────
 let blogs = JSON.parse(localStorage.getItem('ts2_blogs')||'[]');
 
+function slugify(text){
+  return text.toString().toLowerCase().trim()
+    .replace(/\s+/g,'-')
+    .replace(/[^a-z0-9-]/g,'')
+    .replace(/--+/g,'-')
+    .replace(/^-+|-+$/g,'');
+}
+
 async function saveBlog(){
   const id = document.getElementById('blogEditId').value;
   const title = document.getElementById('blogTitle').value.trim();
@@ -1494,16 +1504,17 @@ async function saveBlog(){
   if(!content){alert('Blog content is required!');return;}
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN',{year:'numeric',month:'long',day:'numeric'});
+  const slug = slugify(title);
   let blogRecord;
   if(id){
     const idx = blogs.findIndex(b=>b.id==id);
     if(idx>-1){
-      blogs[idx]={...blogs[idx],title,category,tags,excerpt,content,img,updated:dateStr};
+      blogs[idx]={...blogs[idx],title,category,tags,excerpt,content,img,updated:dateStr,slug:blogs[idx].slug||slug};
       blogRecord = blogs[idx];
       showNotification('Blog post updated!');
     }
   } else {
-    blogRecord = {id:Date.now(),title,category,tags,excerpt,content,img,date:dateStr,author:'Dr. Kartik Rohilla'};
+    blogRecord = {id:crypto.randomUUID(),slug,title,category,tags,excerpt,content,img,date:dateStr,author:'Dr. Kartik Rohilla'};
     blogs.push(blogRecord);
     showNotification('Blog post published!');
   }
