@@ -941,6 +941,11 @@ footer{background:var(--navy-dark);color:rgba(255,255,255,.8);}
         <div class="afg"><label>Short Description (shown on blog card)</label><textarea class="admin-input" id="blogExcerpt" style="min-height:80px;" placeholder="2-3 lines summary for listing page..."></textarea></div>
         <div class="afg"><label>Full Blog Content * (HTML supported: &lt;p&gt;, &lt;h2&gt;, &lt;h3&gt;, &lt;ul&gt;, &lt;li&gt;)</label><textarea class="admin-input" id="blogContent" style="min-height:280px;" placeholder="Write your full blog post here. You can use HTML tags for formatting.&#10;&#10;&lt;h2&gt;Why Dental Health Matters&lt;/h2&gt;&#10;&lt;p&gt;Your paragraph here...&lt;/p&gt;&#10;&lt;ul&gt;&lt;li&gt;Point 1&lt;/li&gt;&lt;/ul&gt;"></textarea></div>
         <div class="afg"><label>Featured Image URL (optional)</label><input class="admin-input" type="url" id="blogImg" placeholder="https://images.unsplash.com/..."></div>
+        <div class="afg">
+          <label>Upload Featured Image from Device (optional)</label>
+          <input type="file" id="blogFile" accept="image/*" onchange="previewBlogImage()" style="width:100%;border:2px solid var(--gray-light);border-radius:10px;padding:10px;background:#fff;">
+        </div>
+        <img id="blogImgPreview" style="display:none;max-width:220px;border-radius:12px;margin-top:10px;" alt="Blog image preview">
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <button class="btn-save" onclick="saveBlog()">💾 Save Blog Post</button>
           <button id="blogCancelEdit" onclick="cancelBlogEdit()" style="display:none;background:#f3f4f6;color:var(--navy);border:none;padding:12px 24px;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;font-family:inherit;">Cancel Edit</button>
@@ -1004,6 +1009,7 @@ let services=JSON.parse(localStorage.getItem('ts2_svcs'))||defaultServices;
 let gallery=JSON.parse(localStorage.getItem('ts2_gallery'))||defaultGallery;
 let testis=JSON.parse(localStorage.getItem('ts2_testis'))||defaultTestis;
 let galFileData=null;
+let blogFileData=null;
 let countersAnimated=false;
 let skillsAnimated=false;
 
@@ -1081,6 +1087,33 @@ async function saveBlogRemote(blog){
     showNotification('Remote blog save error. Check console.', '#ef5350');
   }
 }
+
+async function deleteBlogRemote(id){
+  if(!usingSupabase) return;
+  try{
+    const {error} = await supabaseClient.from('blogs').delete().eq('id', id);
+    if(error){
+      console.warn('Supabase blog delete failed', error);
+      showNotification('Remote blog delete failed: ' + error.message, '#ef5350');
+    }
+  }catch(err){
+    console.warn('Supabase deleteBlog error', err);
+    showNotification('Remote blog delete error. Check console.', '#ef5350');
+  }
+}
+
+function previewBlogImage(){
+  const file = document.getElementById('blogFile').files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    blogFileData = e.target.result;
+    const preview = document.getElementById('blogImgPreview');
+    if(preview){ preview.src = blogFileData; preview.style.display = 'block'; }
+  };
+  reader.readAsDataURL(file);
+}
+
 
 
 
@@ -1451,7 +1484,8 @@ async function saveBlog(){
   const tags = document.getElementById('blogTags').value.trim();
   const excerpt = document.getElementById('blogExcerpt').value.trim();
   const content = document.getElementById('blogContent').value.trim();
-  const img = document.getElementById('blogImg').value.trim();
+  const imgInput = document.getElementById('blogImg').value.trim();
+  const img = blogFileData || imgInput;
   if(!title){alert('Blog title is required!');return;}
   if(!content){alert('Blog content is required!');return;}
   const now = new Date();
@@ -1461,7 +1495,8 @@ async function saveBlog(){
   if(id){
     const idx = blogs.findIndex(b=>b.id==id);
     if(idx>-1){
-      blogs[idx]={...blogs[idx],title,category,tags,excerpt,content,img,updated:dateStr,slug:blogs[idx].slug||slug};
+      const oldImg = blogs[idx].img || '';
+      blogs[idx]={...blogs[idx],title,category,tags,excerpt,content,img: img || oldImg,updated:dateStr,slug:blogs[idx].slug||slug};
       blogRecord = blogs[idx];
       showNotification('Blog post updated!');
     }
@@ -1482,6 +1517,11 @@ function clearBlogForm(){
     const el=document.getElementById(id);
     if(el) el.value='';
   });
+  const fileInput = document.getElementById('blogFile');
+  if(fileInput) fileInput.value = '';
+  blogFileData = null;
+  const preview = document.getElementById('blogImgPreview');
+  if(preview){ preview.style.display='none'; preview.src=''; }
   document.getElementById('blogFormTitle').textContent='✍️ Write New Blog Post';
   document.getElementById('blogCancelEdit').style.display='none';
 }
@@ -1499,7 +1539,18 @@ function editBlog(id){
   document.getElementById('blogTags').value = b.tags||'';
   document.getElementById('blogExcerpt').value = b.excerpt||'';
   document.getElementById('blogContent').value = b.content;
-  document.getElementById('blogImg').value = b.img||'';
+  const isDataUrl = b.img && b.img.startsWith('data:image');
+  document.getElementById('blogImg').value = isDataUrl ? '' : b.img||'';
+  const preview = document.getElementById('blogImgPreview');
+  const fileInput = document.getElementById('blogFile');
+  if(b.img){
+    if(preview){ preview.src = b.img; preview.style.display = 'block'; }
+    blogFileData = isDataUrl ? b.img : null;
+  } else if(preview){
+    preview.style.display='none'; preview.src='';
+    blogFileData = null;
+  }
+  if(fileInput) fileInput.value='';
   document.getElementById('blogFormTitle').textContent='✏️ Edit Blog Post';
   document.getElementById('blogCancelEdit').style.display='inline-block';
   // scroll to form
@@ -1533,8 +1584,8 @@ function renderAdminBlogs(){
         ${b.excerpt?`<p style="margin-top:6px;">${b.excerpt.substring(0,80)}...</p>`:''}
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0;">
-        <button class="btn-edit" onclick="editBlog(${b.id})"><i class="fas fa-edit"></i> Edit</button>
-        <button class="btn-delete" onclick="deleteBlog(${b.id})">Delete</button>
+        <button class="btn-edit" onclick="editBlog('${b.id}')"><i class="fas fa-edit"></i> Edit</button>
+        <button class="btn-delete" onclick="deleteBlog('${b.id}')">Delete</button>
       </div>
     </div>
   `).join('');
@@ -1560,7 +1611,7 @@ function renderBlogPublic(){
         <p>${(b.excerpt||b.content.replace(/<[^>]+>/g,'')).substring(0,120)}...</p>
         ${b.tags?b.tags.split(',').slice(0,3).map(t=>`<span class="blog-tag">${t.trim()}</span>`).join(''):''}
         <br><br>
-        <button class="blog-read-more" onclick="openBlogDetail(${b.id})">Read More <i class="fas fa-arrow-right"></i></button>
+        <button class="blog-read-more" onclick="openBlogDetail('${b.id}')">Read More <i class="fas fa-arrow-right"></i></button>
       </div>
     </div>
   `).join('');
