@@ -1005,9 +1005,29 @@ const defaultTestis=[
 ];
 
 // ── STATE ─────────────────────────────────────────────
-let services=JSON.parse(localStorage.getItem('ts2_svcs'))||defaultServices;
-let gallery=JSON.parse(localStorage.getItem('ts2_gallery'))||defaultGallery;
-let testis=JSON.parse(localStorage.getItem('ts2_testis'))||defaultTestis;
+function safeParse(item, fallback){
+  try{
+    return JSON.parse(item);
+  }catch(err){
+    console.warn('JSON parse failed for localStorage item', err);
+    return fallback;
+  }
+}
+
+function safeSetItem(key, value){
+  try{
+    localStorage.setItem(key, value);
+    return true;
+  }catch(err){
+    console.warn('localStorage setItem failed', err);
+    showNotification('Unable to save locally: storage full or unavailable.', '#ef5350');
+    return false;
+  }
+}
+
+let services=safeParse(localStorage.getItem('ts2_svcs'), null) || defaultServices;
+let gallery=safeParse(localStorage.getItem('ts2_gallery'), null) || defaultGallery;
+let testis=safeParse(localStorage.getItem('ts2_testis'), null) || defaultTestis;
 let galFileData=null;
 let blogFileData=null;
 let countersAnimated=false;
@@ -1099,6 +1119,116 @@ async function deleteBlogRemote(id){
   }catch(err){
     console.warn('Supabase deleteBlog error', err);
     showNotification('Remote blog delete error. Check console.', '#ef5350');
+  }
+}
+
+async function loadServices(){
+  if(usingSupabase){
+    try{
+      const {data,error} = await supabaseClient.from('services').select('*').order('id',{ascending:true});
+      if(error) throw error;
+      if(Array.isArray(data) && data.length){
+        services = data.map(item=>({
+          id:item.id,
+          title:item.title||'',
+          icon:item.icon||'fa-tooth',
+          short:item.short||'',
+          full:item.full||item.short||'',
+          img:item.img||'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=600',
+          benefits:item.benefits||[]
+        }));
+        localStorage.setItem('ts2_svcs', JSON.stringify(services));
+      }
+      return;
+    }catch(err){
+      console.warn('Supabase services load failed', err);
+    }
+  }
+  services = JSON.parse(localStorage.getItem('ts2_svcs') || JSON.stringify(defaultServices));
+}
+
+async function loadGallery(){
+  if(usingSupabase){
+    try{
+      const {data,error} = await supabaseClient.from('gallery').select('*').order('id',{ascending:true});
+      if(error) throw error;
+      if(Array.isArray(data) && data.length){
+        gallery = data.map(item=>({
+          id:item.id,
+          title:item.title||'',
+          src:item.src||item.url||''
+        }));
+        localStorage.setItem('ts2_gallery', JSON.stringify(gallery));
+      }
+      return;
+    }catch(err){
+      console.warn('Supabase gallery load failed', err);
+    }
+  }
+  gallery = JSON.parse(localStorage.getItem('ts2_gallery') || JSON.stringify(defaultGallery));
+}
+
+async function loadRemoteContent(){
+  if(usingSupabase){
+    await Promise.all([loadServices(), loadGallery(), loadBlogs()]);
+  } else {
+    await loadBlogs();
+  }
+}
+
+async function saveServiceRemote(service){
+  if(!usingSupabase) return;
+  try{
+    const {error} = await supabaseClient.from('services').upsert(service);
+    if(error){
+      console.warn('Supabase service save failed', error);
+      showNotification('Remote service save failed: ' + error.message, '#ef5350');
+    }
+  }catch(err){
+    console.warn('Supabase saveService error', err);
+    showNotification('Remote service save error. Check console.', '#ef5350');
+  }
+}
+
+async function deleteServiceRemote(id){
+  if(!usingSupabase) return;
+  try{
+    const {error} = await supabaseClient.from('services').delete().eq('id', id);
+    if(error){
+      console.warn('Supabase service delete failed', error);
+      showNotification('Remote service delete failed: ' + error.message, '#ef5350');
+    }
+  }catch(err){
+    console.warn('Supabase deleteService error', err);
+    showNotification('Remote service delete error. Check console.', '#ef5350');
+  }
+}
+
+async function saveGalleryRemote(item){
+  if(!usingSupabase) return;
+  try{
+    const {error} = await supabaseClient.from('gallery').upsert(item);
+    if(error){
+      console.warn('Supabase gallery save failed', error);
+      showNotification('Remote gallery save failed: ' + error.message, '#ef5350');
+    }
+  }catch(err){
+    console.warn('Supabase saveGallery error', err);
+    showNotification('Remote gallery save error. Check console.', '#ef5350');
+  }
+}
+
+async function deleteGalleryRemote(id){
+  if(!usingSupabase) return;
+  try{
+    const {error} = await supabaseClient.from('gallery').delete().eq('id', id);
+    if(error){
+      console.warn('Supabase gallery delete failed', error);
+      showNotification('Remote gallery delete failed: ' + error.message, '#ef5350');
+    }
+  }catch(err){
+    console.warn('Supabase deleteGallery error', err);
+    showNotification('Remote gallery delete error. Check console.', '#ef5350');
   }
 }
 
@@ -1354,22 +1484,28 @@ function switchAdminTab(tab,btn){
 }
 
 // SERVICE ADMIN
-function saveService(){
+async function saveService(){
   const name=document.getElementById('svcName').value.trim();
   const icon=document.getElementById('svcIcon').value.trim()||'fa-tooth';
   const sh=document.getElementById('svcShort').value.trim();
   const fl=document.getElementById('svcFull').value.trim();
   const img=document.getElementById('svcImgUrl').value.trim();
   if(!name||!sh){alert('Service name and description required!');return;}
-  services.push({id:Date.now(),title:name,icon,short:sh,full:fl||sh,img:img||'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=600',benefits:[]});
-  localStorage.setItem('ts2_svcs',JSON.stringify(services));
+  const newService={id:Date.now(),title:name,icon,short:sh,full:fl||sh,img:img||'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=600',benefits:[]};
+  services.push(newService);
+  if(!safeSetItem('ts2_svcs',JSON.stringify(services))){
+    services = services.filter(s=>s.id!==newService.id);
+    return;
+  }
+  await saveServiceRemote(newService);
   ['svcName','svcIcon','svcShort','svcFull','svcImgUrl'].forEach(id=>document.getElementById(id).value='');
   renderServices();renderAdminServices();showNotification('Service added successfully!');
 }
-function deleteService(id){
+async function deleteService(id){
   if(!confirm('Delete this service?')) return;
   services=services.filter(s=>s.id!==id);
   localStorage.setItem('ts2_svcs',JSON.stringify(services));
+  await deleteServiceRemote(id);
   renderServices();renderAdminServices();showNotification('Service deleted!','#ef5350');
 }
 function renderAdminServices(){
@@ -1391,23 +1527,33 @@ function previewGalImage(){
   r.onload=e=>{galFileData=e.target.result;const p=document.getElementById('galPreview');p.src=galFileData;p.style.display='block';};
   r.readAsDataURL(f);
 }
-function saveGalleryItem(){
+async function saveGalleryItem(){
   const title=document.getElementById('galTitle').value.trim();
   const url=document.getElementById('galUrl').value.trim();
   if(!title){alert('Image title is required!');return;}
   if(!url&&!galFileData){alert('Please provide a URL or upload an image!');return;}
+  if(galFileData && galFileData.length > 400000){
+    alert('Uploaded image is too large for local storage. Please use a hosted image URL instead.');
+    return;
+  }
   const src=galFileData||url;
-  gallery.push({id:Date.now(),title,src});
-  localStorage.setItem('ts2_gallery',JSON.stringify(gallery));
+  const newItem={id:Date.now(),title,src};
+  gallery.push(newItem);
+  if(!safeSetItem('ts2_gallery',JSON.stringify(gallery))){
+    gallery = gallery.filter(g=>g.id!==newItem.id);
+    return;
+  }
+  await saveGalleryRemote(newItem);
   document.getElementById('galTitle').value='';document.getElementById('galUrl').value='';
   document.getElementById('galFile').value='';document.getElementById('galPreview').style.display='none';
   galFileData=null;
   renderGalleryHome();renderAdminGallery();showNotification('Image added to gallery!');
 }
-function deleteGalleryItem(id){
+async function deleteGalleryItem(id){
   if(!confirm('Delete this gallery image?')) return;
   gallery=gallery.filter(g=>g.id!==id);
   localStorage.setItem('ts2_gallery',JSON.stringify(gallery));
+  await deleteGalleryRemote(id);
   renderGalleryHome();renderAdminGallery();showNotification('Image deleted!','#ef5350');
 }
 function renderAdminGallery(){
@@ -1650,7 +1796,7 @@ function closeBlogDetail(){
 // ── INIT ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',async()=>{
   initSupabase();
-  await loadBlogs();
+  await loadRemoteContent();
   renderServices();
   renderGalleryHome();
   renderTestimonials();
