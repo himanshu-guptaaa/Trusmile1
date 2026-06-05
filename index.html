@@ -1177,58 +1177,70 @@ async function loadRemoteContent(){
 }
 
 async function saveServiceRemote(service){
-  if(!usingSupabase) return;
+  if(!usingSupabase) return true;
   try{
     const {error} = await supabaseClient.from('services').upsert(service);
     if(error){
       console.warn('Supabase service save failed', error);
       showNotification('Remote service save failed: ' + error.message, '#ef5350');
+      return false;
     }
+    return true;
   }catch(err){
     console.warn('Supabase saveService error', err);
     showNotification('Remote service save error. Check console.', '#ef5350');
+    return false;
   }
 }
 
 async function deleteServiceRemote(id){
-  if(!usingSupabase) return;
+  if(!usingSupabase) return true;
   try{
     const {error} = await supabaseClient.from('services').delete().eq('id', id);
     if(error){
       console.warn('Supabase service delete failed', error);
       showNotification('Remote service delete failed: ' + error.message, '#ef5350');
+      return false;
     }
+    return true;
   }catch(err){
     console.warn('Supabase deleteService error', err);
     showNotification('Remote service delete error. Check console.', '#ef5350');
+    return false;
   }
 }
 
 async function saveGalleryRemote(item){
-  if(!usingSupabase) return;
+  if(!usingSupabase) return true;
   try{
     const {error} = await supabaseClient.from('gallery').upsert(item);
     if(error){
       console.warn('Supabase gallery save failed', error);
       showNotification('Remote gallery save failed: ' + error.message, '#ef5350');
+      return false;
     }
+    return true;
   }catch(err){
     console.warn('Supabase saveGallery error', err);
     showNotification('Remote gallery save error. Check console.', '#ef5350');
+    return false;
   }
 }
 
 async function deleteGalleryRemote(id){
-  if(!usingSupabase) return;
+  if(!usingSupabase) return true;
   try{
     const {error} = await supabaseClient.from('gallery').delete().eq('id', id);
     if(error){
       console.warn('Supabase gallery delete failed', error);
       showNotification('Remote gallery delete failed: ' + error.message, '#ef5350');
+      return false;
     }
+    return true;
   }catch(err){
     console.warn('Supabase deleteGallery error', err);
     showNotification('Remote gallery delete error. Check console.', '#ef5350');
+    return false;
   }
 }
 
@@ -1492,20 +1504,26 @@ async function saveService(){
   const img=document.getElementById('svcImgUrl').value.trim();
   if(!name||!sh){alert('Service name and description required!');return;}
   const newService={id:Date.now(),title:name,icon,short:sh,full:fl||sh,img:img||'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=600',benefits:[]};
+  if(usingSupabase){
+    const saved = await saveServiceRemote(newService);
+    if(!saved) return;
+  }
   services.push(newService);
   if(!safeSetItem('ts2_svcs',JSON.stringify(services))){
     services = services.filter(s=>s.id!==newService.id);
     return;
   }
-  await saveServiceRemote(newService);
   ['svcName','svcIcon','svcShort','svcFull','svcImgUrl'].forEach(id=>document.getElementById(id).value='');
   renderServices();renderAdminServices();showNotification('Service added successfully!');
 }
 async function deleteService(id){
   if(!confirm('Delete this service?')) return;
+  if(usingSupabase){
+    const deleted = await deleteServiceRemote(id);
+    if(!deleted) return;
+  }
   services=services.filter(s=>s.id!==id);
-  localStorage.setItem('ts2_svcs',JSON.stringify(services));
-  await deleteServiceRemote(id);
+  safeSetItem('ts2_svcs',JSON.stringify(services));
   renderServices();renderAdminServices();showNotification('Service deleted!','#ef5350');
 }
 function renderAdminServices(){
@@ -1538,12 +1556,15 @@ async function saveGalleryItem(){
   }
   const src=galFileData||url;
   const newItem={id:Date.now(),title,src};
+  if(usingSupabase){
+    const saved = await saveGalleryRemote(newItem);
+    if(!saved) return;
+  }
   gallery.push(newItem);
   if(!safeSetItem('ts2_gallery',JSON.stringify(gallery))){
     gallery = gallery.filter(g=>g.id!==newItem.id);
     return;
   }
-  await saveGalleryRemote(newItem);
   document.getElementById('galTitle').value='';document.getElementById('galUrl').value='';
   document.getElementById('galFile').value='';document.getElementById('galPreview').style.display='none';
   galFileData=null;
@@ -1551,9 +1572,12 @@ async function saveGalleryItem(){
 }
 async function deleteGalleryItem(id){
   if(!confirm('Delete this gallery image?')) return;
+  if(usingSupabase){
+    const deleted = await deleteGalleryRemote(id);
+    if(!deleted) return;
+  }
   gallery=gallery.filter(g=>g.id!==id);
-  localStorage.setItem('ts2_gallery',JSON.stringify(gallery));
-  await deleteGalleryRemote(id);
+  safeSetItem('ts2_gallery',JSON.stringify(gallery));
   renderGalleryHome();renderAdminGallery();showNotification('Image deleted!','#ef5350');
 }
 function renderAdminGallery(){
